@@ -1,10 +1,31 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 
-// ─── Image URL builder ────────────────────────────────────────────────────────
-// Fandom's Special:FilePath redirects to the actual CDN image
-// Pattern: https://forza.fandom.com/wiki/Special:FilePath/FH6_{filename}.png
-const FANDOM = (name) =>
-  `https://forza.fandom.com/wiki/Special:FilePath/${encodeURIComponent("FH6_" + name.replace(/ /g, "_") + ".png")}`;
+// ─── Image fetcher via Fandom MediaWiki API ───────────────────────────────────
+// Fetches the actual FH6 thumbnail image from the car's wiki page
+const imgCache = {};
+async function fetchFandomImg(pageTitle) {
+  if (!pageTitle) return null;
+  if (pageTitle in imgCache) return imgCache[pageTitle];
+  imgCache[pageTitle] = null;
+  try {
+    const api = "https://forza.fandom.com/api.php";
+    // Step 1: list images on the page
+    const r1 = await fetch(`${api}?action=query&titles=${encodeURIComponent(pageTitle)}&prop=images&format=json&origin=*`);
+    const d1 = await r1.json();
+    const page = Object.values(d1?.query?.pages||{})[0];
+    const imgs = page?.images||[];
+    // Prefer FH6_ prefixed image, fallback to first
+    const pick = imgs.find(i=>i.title.toLowerCase().includes("fh6_"))||imgs[0];
+    if (!pick) return null;
+    // Step 2: resolve image to actual CDN URL
+    const r2 = await fetch(`${api}?action=query&titles=${encodeURIComponent(pick.title)}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json&origin=*`);
+    const d2 = await r2.json();
+    const ip = Object.values(d2?.query?.pages||{})[0];
+    const url = ip?.imageinfo?.[0]?.thumburl||ip?.imageinfo?.[0]?.url;
+    if (url) { imgCache[pageTitle]=url; return url; }
+  } catch(_) {}
+  return null;
+}
 
 // Car name in our data → Fandom file name (without "FH6_" prefix and ".png")
 // Built from the Category:Thumbnails_(FH6) listing
@@ -32,7 +53,7 @@ const WIKI_IMG = {
   "2015 Class 10 Race Car":              "Alumicraft Class 10 Race Car",
   "2021 #122 Class 1 Buggy":            "Alumicraft 122 Class 1 Buggy",
   "2022 #6165 Trick Truck":             "Alumicraft 6165 Trick Truck",
-  // AMG
+  // AMG TRANSPORT DYNAMICS
   "2554 M12S Warthog CST":              "AMG Transport Dynamics M12S Warthog CST",
   // APOLLO
   "2019 INTENSA EMOZIONE":              "Apollo Intensa Emozione",
@@ -51,8 +72,8 @@ const WIKI_IMG = {
   "2022 Valkyrie AMR Pro":               "Aston Martin Valkyrie AMR Pro",
   "2023 Valkyrie":                       "Aston Martin Valkyrie",
   // AUDI
-  "1984 Sport Quattro":                  "Audi Sport Quattro",
-  "1986 #2 Audi Sport quattro S1":      "Audi 2 Audi Sport quattro S1",
+  "1984 Sport Quattro":                  "Audi Sport quattro",
+  "1986 #2 Audi Sport quattro S1":      "Audi Sport quattro S1",
   "2001 RS 4 Avant":                     "Audi RS 4 Avant",
   "2003 RS 6":                           "Audi RS 6",
   "2006 RS 4":                           "Audi RS 4",
@@ -63,12 +84,12 @@ const WIKI_IMG = {
   "2011 RS 3 Sportback":                 "Audi RS 3 Sportback",
   "2013 RS 4 Avant":                     "Audi RS 4 Avant",
   "2013 RS 7 Sportback":                 "Audi RS 7 Sportback",
-  "2013 R8 Coupé V10 Plus":             "Audi R8 Coupe V10 Plus",
+  "2013 R8 Coupé V10 Plus":             "Audi R8 V10 plus",
   "2015 RS 6 Avant":                     "Audi RS 6 Avant",
   "2015 S1":                             "Audi S1",
-  "2016 R8 V10 Plus":                    "Audi R8 V10 Plus",
+  "2016 R8 V10 Plus":                    "Audi R8 V10 plus",
   "2018 RS 4 Avant":                     "Audi RS 4 Avant",
-  "2020 R8 V10 Performance":             "Audi R8 V10 Performance",
+  "2020 R8 V10 Performance":             "Audi R8 V10 performance",
   "2020 RS 3 Sedan":                     "Audi RS 3 Sedan",
   "2021 RS 6 Avant":                     "Audi RS 6 Avant",
   "2021 RS 7 Sportback":                 "Audi RS 7 Sportback",
@@ -87,20 +108,20 @@ const WIKI_IMG = {
   "1957 Isetta 300 Export":              "BMW Isetta 300 Export",
   "1973 2002 Turbo":                     "BMW 2002 Turbo",
   "1981 M1":                             "BMW M1",
-  "1988 M3":                             "BMW M3",
-  "1988 M5":                             "BMW M5",
+  "1988 M3":                             "BMW M3 (E30)",
+  "1988 M5":                             "BMW M5 (E28)",
   "1995 850CSi":                         "BMW 850CSi",
-  "1995 M5":                             "BMW M5",
-  "1997 M3":                             "BMW M3",
-  "2003 M5":                             "BMW M5",
-  "2005 M3":                             "BMW M3",
+  "1995 M5":                             "BMW M5 (E34)",
+  "1997 M3":                             "BMW M3 (E36)",
+  "2003 M5":                             "BMW M5 (E39)",
+  "2005 M3":                             "BMW M3 (E46)",
   "2008 Z4 M Coupé":                    "BMW Z4 M Coupe",
-  "2008 M3":                             "BMW M3",
-  "2009 M5":                             "BMW M5",
+  "2008 M3":                             "BMW M3 (E92)",
+  "2009 M5":                             "BMW M5 (E60)",
   "2010 M3 GTS":                         "BMW M3 GTS",
-  "2011 X5 M":                           "BMW X5 M",
-  "2012 M5":                             "BMW M5",
-  "2014 M4 Coupé":                      "BMW M4 Coupe",
+  "2011 X5 M":                           "BMW X5 M (E70)",
+  "2012 M5":                             "BMW M5 (F10)",
+  "2014 M4 Coupé":                      "BMW M4",
   "2015 i8":                             "BMW i8",
   "2016 M4 GTS":                         "BMW M4 GTS",
   "2019 Z4 Roadster":                    "BMW Z4 Roadster",
@@ -124,10 +145,10 @@ const WIKI_IMG = {
   // CAN-AM
   "2018 Maverick X RS Turbo R":          "Can-Am Maverick X RS Turbo R",
   // CHEVROLET
-  "1953 Corvette":                       "Chevrolet Corvette",
+  "1953 Corvette":                       "Chevrolet Corvette (C1)",
   "1955 150 Utility Sedan":             "Chevrolet 150 Utility Sedan",
   "1957 Bel Air":                        "Chevrolet Bel Air",
-  "1960 Corvette":                       "Chevrolet Corvette",
+  "1960 Corvette":                       "Chevrolet Corvette (C1)",
   "1964 Impala Super Sport 409":         "Chevrolet Impala Super Sport 409",
   "1967 Corvette Stingray 427":          "Chevrolet Corvette Stingray 427",
   "1969 Nova Super Sport 396":           "Chevrolet Nova Super Sport 396",
@@ -135,34 +156,35 @@ const WIKI_IMG = {
   "1970 Camaro Z28":                     "Chevrolet Camaro Z28",
   "1970 El Camino Super Sport 454":     "Chevrolet El Camino Super Sport 454",
   "1970 Chevelle Super Sport 454":      "Chevrolet Chevelle Super Sport 454",
-  "1970 Corvette ZR-1":                  "Chevrolet Corvette ZR-1",
+  "1970 Corvette ZR-1":                  "Chevrolet Corvette ZR-1 (C3)",
   "1972 K-10 Custom":                    "Chevrolet K-10 Custom",
-  "1979 Camaro Z28":                     "Chevrolet Camaro Z28",
+  "1979 Camaro Z28":                     "Chevrolet Camaro Z28 (1979)",
   "1988 Monte Carlo Super Sport":        "Chevrolet Monte Carlo Super Sport",
-  "1995 Corvette ZR-1":                  "Chevrolet Corvette ZR-1",
+  "1995 Corvette ZR-1":                  "Chevrolet Corvette ZR-1 (C4)",
   "1996 Impala Super Sport":             "Chevrolet Impala Super Sport",
-  "2002 Corvette Z06":                   "Chevrolet Corvette Z06",
-  "2009 Corvette ZR1":                   "Chevrolet Corvette ZR1",
-  "2015 Camaro Z/28":                   "Chevrolet Camaro Z28",
-  "2015 Corvette Z06":                   "Chevrolet Corvette Z06",
-  "2017 Camaro ZL1":                     "Chevrolet Camaro ZL1",
+  "2002 Corvette Z06":                   "Chevrolet Corvette Z06 (C5)",
+  "2009 Corvette ZR1":                   "Chevrolet Corvette ZR1 (C6)",
+  "2015 Camaro Z/28":                   "Chevrolet Camaro Z28 (2015)",
+  "2015 Corvette Z06":                   "Chevrolet Corvette Z06 (C7)",
+  "2017 Camaro ZL1":                     "Chevrolet Camaro ZL1 (2017)",
   "2018 Camaro ZL1 1LE":                "Chevrolet Camaro ZL1 1LE",
-  "2019 Corvette ZR1":                   "Chevrolet Corvette ZR1",
+  "2019 Corvette ZR1":                   "Chevrolet Corvette ZR1 (C7)",
   "2020 Silverado LT Trail Boss":        "Chevrolet Silverado LT Trail Boss",
-  "2020 Corvette Stingray Coupe":       "Chevrolet Corvette Stingray Coupe",
-  "2023 Corvette Z06":                   "Chevrolet Corvette Z06",
+  "2020 Corvette Stingray Coupe":        "Chevrolet Corvette Stingray (C8)",
+  "2023 Corvette Z06":                   "Chevrolet Corvette Z06 (C8)",
   "2024 Corvette E-Ray":                 "Chevrolet Corvette E-Ray",
+  // DATSUN
+  "1969 2000 Roadster":                  "Datsun 2000 Roadster",
+  "1970 510":                            "Datsun 510",
   // DELOREAN
   "1982 DMC-12":                         "DeLorean DMC-12",
   // DODGE
-  "1968 Dart HEMI Super Stock":          "Dodge Dart HEMI Super Stock",
-  "1969 Charger Daytona Hemi":          "Dodge Charger Daytona HEMI",
-  "1969 Charger R/T":                   "Dodge Charger RT",
+  "1969 Charger Daytona Hemi":           "Dodge Charger Daytona Hemi",
+  "1969 Charger R/T":                    "Dodge Charger R/T",
   "1970 Coronet Super Bee":              "Dodge Coronet Super Bee",
-  "1970 Challenger R/T":                "Dodge Challenger RT",
-  "1999 Viper GTS ACR Forza Edition":   "Dodge Viper GTS ACR Forza Edition",
+  "1970 Challenger R/T":                 "Dodge Challenger R/T",
   "1999 Viper GTS ACR":                  "Dodge Viper GTS ACR",
-  "2006 Ram SRT-10":                     "Dodge Ram SRT-10",
+  "1999 Viper GTS ACR Forza Edition":    "Dodge Viper GTS ACR Forza Edition",
   "2008 Viper SRT-10 ACR":              "Dodge Viper SRT-10 ACR",
   "2015 Charger SRT Hellcat":            "Dodge Charger SRT Hellcat",
   "2015 Challenger SRT Hellcat":         "Dodge Challenger SRT Hellcat",
@@ -173,13 +195,13 @@ const WIKI_IMG = {
   // FERRARI
   "1962 250 GTO":                        "Ferrari 250 GTO",
   "1962 250 GT Berlinetta Lusso":        "Ferrari 250 GT Berlinetta Lusso",
-  "1967 #24 Ferrari SPA 330 P4":        "Ferrari 24 Ferrari SPA 330 P4",
+  "1967 #24 Ferrari SPA 330 P4":        "Ferrari 330 P4",
   "1969 Dino 246 GT":                    "Ferrari Dino 246 GT",
   "1967 275 GTB4 Spider":               "Ferrari 275 GTB4 Spider",
   "1970 512 S":                          "Ferrari 512 S",
   "1984 288 GTO":                        "Ferrari 288 GTO",
   "1987 F40":                            "Ferrari F40",
-  "1989 F40 Competizione":              "Ferrari F40 Competizione",
+  "1989 F40 Competizione":               "Ferrari F40 Competizione",
   "1992 512 TR":                         "Ferrari 512 TR",
   "1994 F355 Berlinetta":               "Ferrari F355 Berlinetta",
   "1995 F50":                            "Ferrari F50",
@@ -192,13 +214,13 @@ const WIKI_IMG = {
   "2012 599XX Evolution":               "Ferrari 599XX Evolution",
   "2013 LaFerrari":                      "Ferrari LaFerrari",
   "2013 458 Speciale":                   "Ferrari 458 Speciale",
-  "2014 FXX K":                          "Ferrari FXX-K",
+  "2014 FXX K":                          "Ferrari FXX K",
   "2015 488 GTB":                        "Ferrari 488 GTB",
-  "2015 F12TDF":                         "Ferrari F12TDF",
+  "2015 F12TDF":                         "Ferrari F12tdf",
   "2017 812 Superfast":                  "Ferrari 812 Superfast",
   "2017 J50":                            "Ferrari J50",
   "2017 J50 Preorder Car":              "Ferrari J50 Preorder Car",
-  "2018 FXX-K Evo":                     "Ferrari FXX-K Evo",
+  "2018 FXX-K Evo":                      "Ferrari FXX-K Evo",
   "2018 Portofino":                      "Ferrari Portofino",
   "2018 FXX-K Evo Welcome Pack":        "Ferrari FXX-K Evo Welcome Pack",
   "2019 F8 Tributo":                     "Ferrari F8 Tributo",
@@ -211,62 +233,56 @@ const WIKI_IMG = {
   // FORD
   "1932 De Luxe Five-Window Coupe":     "Ford De Luxe Five-Window Coupe",
   "1965 Mustang GT Coupe":              "Ford Mustang GT Coupe",
-  "1966 #2 GT40 Mk II":                "Ford 2 GT40 Mk II Le Mans",
+  "1966 #2 GT40 Mk II":                "Ford GT40 Mk II",
+  "1968 Mustang 2+2 Fastback":         "Ford Mustang 2+2 Fastback",
   "1968 Mustang 2+2 Fastback FORZA EDITION": "Ford Mustang 2+2 Fastback Forza Edition",
-  "1968 Mustang 2+2 Fastback":          "Ford Mustang 2+2 Fastback",
   "1969 Mustang Boss 302":              "Ford Mustang Boss 302",
   "1973 XB Falcon GT":                  "Ford XB Falcon GT",
   "1973 Capri RS3100":                  "Ford Capri RS3100",
-  "1977 #5 Escort RS1800 Mk II":       "Ford 5 Escort RS1800 MK II",
+  "1977 #5 Escort RS1800 Mk II":       "Ford Escort RS1800 Mk II",
   "1985 RS200 Evolution":               "Ford RS200 Evolution",
-  "1986 F-150 XLT LARIAT FORZA EDITION": "Ford F-150 XLT Lariat Forza Edition",
   "1986 F-150 XLT Lariat":             "Ford F-150 XLT Lariat",
   "1987 Sierra Cosworth RS500":         "Ford Sierra Cosworth RS500",
   "1992 Escort RS Cosworth":            "Ford Escort RS Cosworth",
   "1993 Mustang SVT Cobra R":           "Ford Mustang SVT Cobra R",
   "1994 Supervan 3":                    "Ford Supervan 3",
   "1999 Racing Puma":                   "Ford Racing Puma",
-  "2000 Mustang SVT Cobra R":           "Ford Mustang SVT Cobra R",
-  "2001 #4 Ford Focus RS":             "Ford 4 Focus RS",
-  "2003 Focus RS":                       "Ford Focus RS",
-  "2003 F-150 SVT Lightning":           "Ford F-150 SVT Lightning",
-  "2005 GT":                             "Ford GT",
-  "2009 Focus RS":                       "Ford Focus RS",
+  "2000 Mustang SVT Cobra R":           "Ford Mustang SVT Cobra R (2000)",
+  "2003 Focus RS":                      "Ford Focus RS (2003)",
+  "2005 GT":                            "Ford GT (2005)",
+  "2009 Focus RS":                      "Ford Focus RS (2009)",
   "2010 Crown Victoria Police Interceptor": "Ford Crown Victoria Police Interceptor",
-  "2011 Transit SuperSportVan":         "Ford Transit SuperSportVan",
-  "2013 Mustang Shelby GT500":          "Ford Mustang Shelby GT500",
-  "2014 #11 Rockstar F-150 Trophy Truck": "Ford 11 Rockstar F-150 Trophy Truck",
-  "2014 FPV Limited Edition Pursuit Ute": "Ford FPV Limited Edition Pursuit Ute",
-  "2014 Range T6 Rally Raid":           "Ford Range T6 Rally Raid",
+  "2013 Mustang Shelby GT500":          "Ford Mustang Shelby GT500 (2013)",
   "2016 Mustang Shelby GT350R":         "Ford Mustang Shelby GT350R",
-  "2017 Focus RS":                       "Ford Focus RS",
-  "2017 GT":                             "Ford GT",
-  "2017 Brocky Ultra4 Bronco RTR":      "Ford 25 Brocky Ultra4 Bronco RTR",
-  "2017 M-Sport Fiesta RS":             "Ford M-Sport Fiesta RS",
-  "2018 Mustang RTR Spec 5":            "Ford Mustang RTR Spec 5",
-  "2020 Mustang Shelby GT500":          "Ford Mustang Shelby GT500",
-  "2020 Super Duty F-450 DRW Platinum": "Ford Super Duty F-450 DRW Platinum",
-  "2022 Bronco Raptor":                  "Ford Bronco Raptor",
-  "2022 Supervan 4":                     "Ford Supervan 4",
-  "2022 F-150 Lightning":               "Ford F-150 Lightning",
-  "2022 Focus ST":                       "Ford Focus ST",
-  "2023 F-150 Raptor R Welcome Pack":   "Ford F-150 Raptor R Welcome Pack",
-  "2023 Fiesta ST":                      "Ford Fiesta ST",
-  "2023 F-150 Raptor R":                "Ford F-150 Raptor R",
-  "2024 Mustang Dark Horse":             "Ford Mustang Dark Horse",
-  "2024 Mustang GT":                     "Ford Mustang GT",
+  "2017 Focus RS":                      "Ford Focus RS (2017)",
+  "2017 GT":                            "Ford GT (2017)",
+  "2020 Mustang Shelby GT500":          "Ford Mustang Shelby GT500 (2020)",
+  "2022 Bronco Raptor":                 "Ford Bronco Raptor",
+  "2022 Supervan 4":                    "Ford Supervan 4",
+  "2023 F-150 Raptor R":               "Ford F-150 Raptor R",
+  "2024 Mustang Dark Horse":            "Ford Mustang Dark Horse",
+  "2024 Mustang GT":                    "Ford Mustang GT (2024)",
+  // GMC
+  "1991 Syclone":                        "GMC Syclone",
+  "1992 Typhoon":                        "GMC Typhoon",
+  "2022 EV Hummer Pickup":              "GMC Hummer EV Pickup",
   // GR
   "2025 GT Prototype":                   "GR GT Prototype",
+  // HENNESSEY
+  "2012 Venom GT":                       "Hennessey Venom GT",
+  "2021 Venom F5":                       "Hennessey Venom F5",
   // HONDA
   "1970 S800":                           "Honda S800",
   "1991 Beat":                           "Honda Beat",
-  "1992 NSX-R":                          "Honda NSX-R",
-  "1997 Civic Type R":                   "Honda Civic Type R",
+  "1992 NSX-R":                          "Honda NSX-R (NA1)",
+  "1997 Civic Type R":                   "Honda Civic Type R (EK9)",
   "2003 S2000":                          "Honda S2000",
-  "2004 Civic Type R":                   "Honda Civic Type R",
-  "2015 Civic Type R":                   "Honda Civic Type R",
-  "2018 Civic Type R":                   "Honda Civic Type R",
-  "2023 Civic Type R":                   "Honda Civic Type R",
+  "2004 Civic Type R":                   "Honda Civic Type R (EP3)",
+  "2005 NSX-R":                          "Honda NSX-R (NA2)",
+  "2007 Civic Type R":                   "Honda Civic Type R (FN2)",
+  "2015 Civic Type R":                   "Honda Civic Type R (FK2)",
+  "2018 Civic Type R":                   "Honda Civic Type R (FK8)",
+  "2023 Civic Type R":                   "Honda Civic Type R (FL5)",
   // HYUNDAI
   "2019 Veloster N":                     "Hyundai Veloster N",
   "2020 i30 N":                          "Hyundai i30 N",
@@ -289,11 +305,13 @@ const WIKI_IMG = {
   // KOENIGSEGG
   "2008 CCGT":                           "Koenigsegg CCGT",
   "2011 Agera":                          "Koenigsegg Agera",
-  "2015 ONE:1":                          "Koenigsegg ONE:1",
+  "2015 ONE:1":                          "Koenigsegg One:1",
   "2016 Regera":                         "Koenigsegg Regera",
   "2017 Agera RS":                       "Koenigsegg Agera RS",
   "2020 Jesko":                          "Koenigsegg Jesko",
   "2024 Gemera":                         "Koenigsegg Gemera",
+  // KTM
+  "2018 X-Bow GT4":                      "KTM X-Bow GT4",
   // LAMBORGHINI
   "1967 Miura P400":                     "Lamborghini Miura P400",
   "1988 Countach LP5000 QV":            "Lamborghini Countach LP5000 QV",
@@ -325,8 +343,8 @@ const WIKI_IMG = {
   "2015 Range Rover Sport SVR":         "Land Rover Range Rover Sport SVR",
   "2020 Defender 110 X":                "Land Rover Defender 110 X",
   // LEXUS
-  "2010 LFA Forza Edition":             "Lexus LFA Forza Edition",
   "2010 LFA":                            "Lexus LFA",
+  "2010 LFA Forza Edition":             "Lexus LFA Forza Edition",
   "2015 RC F":                           "Lexus RC F",
   "2021 LC 500":                         "Lexus LC 500",
   // LOTUS
@@ -343,15 +361,18 @@ const WIKI_IMG = {
   "2022 MC20":                           "Maserati MC20",
   // MAZDA
   "1973 RX-3":                           "Mazda RX-3",
+  "1973 RX-3 Forza Edition":            "Mazda RX-3 Forza Edition",
   "1985 RX-7 GSL-SE":                   "Mazda RX-7 GSL-SE",
   "1990 Savanna RX-7":                   "Mazda Savanna RX-7",
-  "1991 #55 Mazda 787B":               "Mazda 55 MAZDA 787B",
+  "1991 #55 Mazda 787B":               "Mazda 787B",
   "1992 RX-7 Type R":                    "Mazda RX-7 Type R",
   "1994 MX-5 Miata":                     "Mazda MX-5 Miata",
   "1994 MX-5 Miata Forza Edition":      "Mazda MX-5 Miata Forza Edition",
   "2008 Furai":                          "Mazda Furai",
   "2011 RX-8 R3":                        "Mazda RX-8 R3",
-  "2016 MX-5":                           "Mazda MX-5",
+  "2013 MX-5":                           "Mazda MX-5 (NC)",
+  "2016 MX-5":                           "Mazda MX-5 (ND)",
+  "2017 MX-5 Cup":                       "Mazda MX-5 Cup",
   "2022 MX-5 Miata RF":                  "Mazda MX-5 Miata RF",
   // MCLAREN
   "1993 F1":                             "McLaren F1",
@@ -392,89 +413,117 @@ const WIKI_IMG = {
   "2014 G 65 AMG 6x6":                  "Mercedes-Benz G 65 AMG 6x6",
   // MITSUBISHI
   "2004 Lancer Evolution VIII MR":      "Mitsubishi Lancer Evolution VIII MR",
+  "2006 Lancer Evolution IX MR":        "Mitsubishi Lancer Evolution IX MR",
   "2008 Lancer Evolution X GSR":        "Mitsubishi Lancer Evolution X GSR",
+  "2001 Lancer Evolution VI GSR TM Edition": "Mitsubishi Lancer Evolution VI GSR TM Edition",
+  "1995 Eclipse GSX":                    "Mitsubishi Eclipse GSX",
+  "1992 Galant VR-4":                    "Mitsubishi Galant VR-4",
+  "1995 Lancer Evolution III GSR":      "Mitsubishi Lancer Evolution III GSR",
+  "2004 Lancer Evolution VIII MR Welcome Pack": "Mitsubishi Lancer Evolution VIII MR Welcome Pack",
   // NISSAN
   "1969 Fairlady Z 432":                "Nissan Fairlady Z 432",
+  "1971 Skyline 2000GT-R":             "Nissan Skyline 2000GT-R",
   "1973 Skyline H/T 2000GT-R":         "Nissan Skyline HT 2000GT-R",
-  "1989 Silvia K's":                    "Nissan Silvia Ks",
-  "1992 Skyline GT-R":                   "Nissan Skyline GT-R",
-  "1994 Silvia K's":                    "Nissan Silvia Ks",
+  "1987 Skyline GTS-R":                 "Nissan Skyline GTS-R",
+  "1989 Silvia K's":                    "Nissan Silvia K's",
+  "1989 S-Cargo":                        "Nissan S-Cargo",
+  "1990 Pulsar GTI-R":                   "Nissan Pulsar GTI-R",
+  "1992 Skyline GT-R":                   "Nissan Skyline GT-R (BNR32)",
+  "1994 Silvia K's":                    "Nissan Silvia K's (S14)",
+  "1994 Fairlady Z Version S Twin Turbo": "Nissan Fairlady Z Version S Twin Turbo",
+  "1995 NISMO GT-R LM":                 "Nissan NISMO GT-R LM",
+  "1997 Skyline GT-R V-Spec":           "Nissan Skyline GT-R V-Spec (BCNR33)",
+  "1998 Silvia K's Aero":               "Nissan Silvia K's Aero",
   "2000 Skyline GT-R V-Spec II":        "Nissan Skyline GT-R V-Spec II",
   "2002 Silvia Spec-R":                  "Nissan Silvia Spec-R",
-  "2012 GT-R Black Edition R35":        "Nissan GT-R Black Edition (R35)",
-  "2017 GT-R R35":                       "Nissan GT-R (R35)",
-  "2020 GT-R NISMO R35":                "Nissan GT-R NISMO (R35)",
-  "2024 GT-R NISMO":                     "Nissan GT-R NISMO",
+  "2003 Fairlady Z":                     "Nissan Fairlady Z",
+  "2012 GT-R Black Edition R35":        "Nissan GT-R Black Edition",
+  "2017 GT-R R35":                       "Nissan GT-R",
+  "2019 370Z NISMO":                     "Nissan 370Z NISMO",
+  "2020 GT-R NISMO R35":                "Nissan GT-R NISMO",
+  "2024 GT-R NISMO":                     "Nissan GT-R NISMO (2024)",
   "2024 Z NISMO":                        "Nissan Z NISMO",
   // PAGANI
   "2009 Zonda R":                        "Pagani Zonda R",
   "2010 Zonda Cinque Roadster":          "Pagani Zonda Cinque Roadster",
   "2016 Huayra BC Coupe":               "Pagani Huayra BC Coupe",
   "2021 Huayra R":                       "Pagani Huayra R",
-  // PEEL
-  "1962 P50":                            "Peel P50",
   // PORSCHE
-  "1970 #3 917 LH":                     "Porsche 3 917 LH",
-  "1970 #3 917 LH FORZA EDITION":       "Porsche 3 917 LH Forza Edition",
   "1973 911 Carrera RS":                 "Porsche 911 Carrera RS",
+  "1986 #185 959 Prodrive Rally Raid":  "Porsche 959 Prodrive Rally Raid",
   "1987 959":                            "Porsche 959",
   "1989 944 Turbo":                      "Porsche 944 Turbo",
+  "1993 968 Turbo S":                    "Porsche 968 Turbo S",
+  "1993 928 GTS":                        "Porsche 928 GTS",
+  "1993 911 Turbo S Leichtbau":         "Porsche 911 Turbo S Leichtbau",
+  "1995 911 GT2":                        "Porsche 911 GT2 (993)",
   "1998 911 GT1 Strassenversion":        "Porsche 911 GT1 Strassenversion",
+  "1970 #3 917 LH":                      "Porsche 917 LH",
   "2003 Carrera GT":                     "Porsche Carrera GT",
-  "2004 911 GT3":                        "Porsche 911 GT3",
+  "2004 911 GT3":                        "Porsche 911 GT3 (996)",
+  "2014 911 GT3 RS 4.0":               "Porsche 911 GT3 RS 4.0",
   "2014 918 Spyder":                     "Porsche 918 Spyder",
   "2018 911 GT2 RS":                     "Porsche 911 GT2 RS",
-  "2019 911 GT3 RS":                     "Porsche 911 GT3 RS",
+  "2018 Cayenne Turbo":                  "Porsche Cayenne Turbo",
+  "2018 718 Cayman GTS":                "Porsche 718 Cayman GTS",
+  "2019 #70 Porsche Motorsport 935":    "Porsche 935",
+  "2019 911 Carrera S":                  "Porsche 911 Carrera S",
+  "2019 911 GT3 RS":                     "Porsche 911 GT3 RS (991.2)",
   "2020 Taycan Turbo S":                 "Porsche Taycan Turbo S",
-  "2021 911 GT3":                        "Porsche 911 GT3",
+  "2021 911 GT3":                        "Porsche 911 GT3 (992)",
+  "2022 718 Cayman GT4 RS":             "Porsche 718 Cayman GT4 RS",
   "2022 Mission R":                      "Porsche Mission R",
-  "2023 911 GT3 RS":                     "Porsche 911 GT3 RS",
+  "2023 911 GT3 RS":                     "Porsche 911 GT3 RS (992)",
   "2023 911 Turbo S":                    "Porsche 911 Turbo S",
   // RENAULT
   "1980 5 Turbo":                        "Renault 5 Turbo",
   "1993 Clio Williams":                  "Renault Clio Williams",
+  "2008 Megane R26.R":                   "Renault Megane R26.R",
+  "2018 Megane R.S.":                    "Renault Megane R.S.",
   // RIMAC
   "2021 Nevera":                         "Rimac Nevera",
   // SHELBY
   "1965 Cobra Daytona Coupe":           "Shelby Cobra Daytona Coupe",
-  "1965 Cobra 427 S/C":                 "Shelby Cobra 427 SC",
+  "1965 Cobra 427 S/C":                 "Shelby Cobra 427 S/C",
   // SUBARU
   "1998 Impreza 22B-STi Version":       "Subaru Impreza 22B-STi Version",
   "2004 Impreza WRX STi":               "Subaru Impreza WRX STi",
+  "2005 Impreza WRX STI":               "Subaru Impreza WRX STI",
+  "2008 Impreza WRX STI":               "Subaru Impreza WRX STI (2008)",
+  "2011 WRX STI":                        "Subaru WRX STI (GRB)",
   "2013 BRZ":                            "Subaru BRZ",
   "2015 WRX STI":                        "Subaru WRX STI",
-  "2022 BRZ FORZA EDITION":             "Subaru BRZ Forza Edition",
-  "2022 BRZ":                            "Subaru BRZ",
+  "2019 STI S209":                       "Subaru STI S209",
+  "2022 BRZ":                            "Subaru BRZ (ZD8)",
   "2022 WRX":                            "Subaru WRX",
   // TOYOTA
   "1969 2000GT":                         "Toyota 2000GT",
   "1979 FJ40":                           "Toyota FJ40",
   "1985 Sprinter Trueno GT Apex":        "Toyota Sprinter Trueno GT Apex",
-  "1985 Sprinter Trueno GT Apex Forza Edition": "Toyota Sprinter Trueno GT Apex Forza Edition",
-  "1992 Celica GT-Four RC ST185":        "Toyota Celica GT-Four RC ST185",
-  "1994 Celica GT-Four ST205":           "Toyota Celica GT-Four ST205",
   "1998 Supra RZ":                       "Toyota Supra RZ",
   "2013 86":                             "Toyota 86",
+  "2019 Tacoma TRD Pro":                 "Toyota Tacoma TRD Pro",
   "2020 GR Supra":                       "Toyota GR Supra",
   "2021 GR Yaris":                       "Toyota GR Yaris",
   "2022 GR86":                           "Toyota GR86",
-  "2025 Land Cruiser":                   "Toyota Land Cruiser",
+  "2025 Land Cruiser":                   "Toyota Land Cruiser (2025)",
+  // TVR
+  "2005 Sagaris":                        "TVR Sagaris",
+  "2018 Griffith":                       "TVR Griffith",
   // VOLKSWAGEN
-  "1983 Golf GTI":                       "Volkswagen Golf GTI",
-  "2010 Golf R":                         "Volkswagen Golf R",
-  "2014 Golf R":                         "Volkswagen Golf R",
-  "2022 Golf R":                         "Volkswagen Golf R",
+  "1963 Beetle":                         "Volkswagen Beetle (1963)",
+  "1983 Golf GTI":                       "Volkswagen Golf GTI (Mk1)",
+  "2010 Golf R":                         "Volkswagen Golf R (Mk6)",
+  "2014 Golf R":                         "Volkswagen Golf R (Mk7)",
+  "2021 Golf R":                         "Volkswagen Golf R (Mk8)",
+  "2022 Golf R":                         "Volkswagen Golf R (Mk8)",
   // ZENVO
   "2019 TSR-S":                          "Zenvo TSR-S",
 };
 
-function getImgUrl(carName) {
-  // carName is the full string like "1987 Ferrari F40"
-  // Strip year to match our WIKI_IMG keys
+function getPageTitle(carName) {
   const nameNoYear = carName.replace(/^\d{4}\s+/, "");
-  const wikiName = WIKI_IMG[carName] || WIKI_IMG[nameNoYear];
-  if (!wikiName) return null;
-  return FANDOM(wikiName);
+  return WIKI_IMG[carName] || WIKI_IMG[nameNoYear] || null;
 }
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
@@ -538,70 +587,52 @@ const SRC_C = {
 };
 
 // ─── CAR IMAGE ────────────────────────────────────────────────────────────────
+// ─── CAR IMAGE ────────────────────────────────────────────────────────────────
 function CarImage({ name, brand }) {
-  const [state, setState] = useState("idle"); // idle | loading | ok | err
-  const imgRef = useRef(null);
+  const [imgUrl, setImgUrl] = useState(null);
   const divRef = useRef(null);
-  const url = getImgUrl(name);
+  const fetched = useRef(false);
   const bg = BRAND_BG[brand]||BRAND_BG.default;
   const initials = brand.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase();
+  const pageTitle = getPageTitle(name);
 
   useEffect(() => {
-    if (!url || state !== "idle") return;
-    const el = divRef.current;
-    if (!el) return;
+    if (fetched.current || !pageTitle) return;
+    const el = divRef.current; if (!el) return;
     const obs = new IntersectionObserver(([e]) => {
       if (!e.isIntersecting) return;
       obs.disconnect();
-      setState("loading");
-    }, { rootMargin:"400px" });
+      if (fetched.current) return;
+      fetched.current = true;
+      fetchFandomImg(pageTitle).then(url => setImgUrl(url || "err"));
+    }, { rootMargin:"500px" });
     obs.observe(el);
     return () => obs.disconnect();
-  }, [url, state]);
+  }, [pageTitle]);
+
+  const hasImg = imgUrl && imgUrl !== "err";
 
   return (
     <div ref={divRef} style={{
       width:"100%", height:130, position:"relative", overflow:"hidden",
-      background: state==="ok" ? "#e8eef0" : `${bg}22`,
+      background: hasImg ? "#eaf0ec" : `${bg}18`,
       display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
     }}>
-      {/* Brand circle placeholder */}
-      {state !== "ok" && (
+      {!hasImg && (
         <div style={{
-          width:50, height:50, borderRadius:"50%", background:bg,
+          width:52, height:52, borderRadius:"50%", background:bg,
           display:"flex", alignItems:"center", justifyContent:"center",
           fontFamily:"'Rajdhani',sans-serif", fontWeight:900, fontSize:18, color:"#fff",
-          opacity: state==="err"||!url ? 0.5 : 0.9,
+          opacity: imgUrl==="err"||!pageTitle ? 0.4 : 0.8,
         }}>{initials}</div>
       )}
-
-      {/* Real image */}
-      {state==="loading" && url && (
-        <img
-          ref={imgRef}
-          src={url}
-          alt=""
-          onLoad={() => setState("ok")}
-          onError={() => setState("err")}
-          style={{
-            position:"absolute", inset:0, width:"100%", height:"100%",
-            objectFit:"cover", objectPosition:"center 30%",
-            opacity: state==="ok"?1:0, transition:"opacity 0.4s",
-          }}
-        />
+      {hasImg && (
+        <img src={imgUrl} alt="" style={{
+          position:"absolute", inset:0, width:"100%", height:"100%",
+          objectFit:"cover", objectPosition:"center 30%",
+          animation:"fhFadeIn 0.4s ease forwards",
+        }}/>
       )}
-      {state==="ok" && (
-        <img
-          src={url}
-          alt=""
-          style={{
-            position:"absolute", inset:0, width:"100%", height:"100%",
-            objectFit:"cover", objectPosition:"center 30%",
-          }}
-        />
-      )}
-
-      {/* Bottom fade */}
       <div style={{
         position:"absolute", bottom:0, left:0, right:0, height:45,
         background:"linear-gradient(to top, rgba(248,252,250,0.95), transparent)",
