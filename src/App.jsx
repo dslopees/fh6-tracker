@@ -680,12 +680,22 @@ const ALL_BRANDS = [...new Set(CARS.map(c=>c.brand))].sort();
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [owned,setOwned]             = useState(new Set());
+  const [owned,setOwned]             = useState(()=>{
+    try {
+      const saved = localStorage.getItem("fh6_owned");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
   const [selBrand,setSelBrand]       = useState("");
   const [view,setView]               = useState("all");
   const [search,setSearch]           = useState("");
   const [filterClass,setFilterClass] = useState(null);
   const [sortBy,setSortBy]           = useState("brand");
+
+  // Save to localStorage whenever owned changes
+  useEffect(()=>{
+    try { localStorage.setItem("fh6_owned", JSON.stringify([...owned])); } catch {}
+  },[owned]);
 
   const toggle = useCallback(id=>{setOwned(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});},[]);
 
