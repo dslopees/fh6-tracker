@@ -2,33 +2,17 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 
 // ─── Image fetcher via Fandom MediaWiki API ───────────────────────────────────
 // Fetches the actual FH6 thumbnail image from the car's wiki page
-const imgCache = {};
-async function fetchFandomImg(pageTitle) {
+// ── Image URL builder ────────────────────────────────────────────────────────
+// Uses Fandom's Special:FilePath which redirects to the actual CDN image.
+// The FH6 thumbnail filename pattern is always: FH6_{PageTitle}.png
+// Browsers follow the redirect automatically — no fetch() needed.
+function getFH6ImageUrl(pageTitle) {
   if (!pageTitle) return null;
-  if (pageTitle in imgCache) return imgCache[pageTitle];
-  imgCache[pageTitle] = null;
-  try {
-    const api = "https://forza.fandom.com/api.php";
-
-    // Get all images listed on the page
-    const r1 = await fetch(`${api}?action=query&titles=${encodeURIComponent(pageTitle)}&prop=images&imlimit=50&format=json&origin=*`);
-    const d1 = await r1.json();
-    const page = Object.values(d1?.query?.pages || {})[0];
-    const images = (page?.images || []).map(i => i.title);
-
-    // ONLY use FH6_ prefixed image — never fall back to other games' renders
-    const fh6img = images.find(t => t.toLowerCase().startsWith("file:fh6_"));
-    if (!fh6img) return null;
-
-    // Resolve to actual CDN URL at 600px
-    const r2 = await fetch(`${api}?action=query&titles=${encodeURIComponent(fh6img)}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json&origin=*`);
-    const d2 = await r2.json();
-    const ip = Object.values(d2?.query?.pages || {})[0];
-    const url = ip?.imageinfo?.[0]?.thumburl || ip?.imageinfo?.[0]?.url;
-    if (url) { imgCache[pageTitle] = url; return url; }
-  } catch(_) {}
-  return null;
+  // Convert page title to filename: spaces → underscores
+  const filename = "FH6_" + pageTitle.replace(/ /g, "_") + ".png";
+  return `https://forza.fandom.com/wiki/Special:FilePath/${encodeURIComponent(filename)}?width=400`;
 }
+
 const WIKI_IMG = {
   // ABARTH
   "1968 595 Esseesse":                   "Abarth 595 esseesse",
@@ -557,6 +541,11 @@ function getPageTitle(carName) {
   return WIKI_IMG[carName] || WIKI_IMG[nameNoYear] || null;
 }
 
+function getCarImageUrl(carName) {
+  const title = getPageTitle(carName);
+  return title ? getFH6ImageUrl(title) : null;
+}
+
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const RARITY = {
   X:  { label:"LEGENDARY", bg:"#B8C400", text:"#000" },
@@ -620,50 +609,44 @@ const SRC_C = {
 // ─── CAR IMAGE ────────────────────────────────────────────────────────────────
 // ─── CAR IMAGE ────────────────────────────────────────────────────────────────
 function CarImage({ name, brand }) {
-  const [imgUrl, setImgUrl] = useState(null);
-  const divRef = useRef(null);
-  const fetched = useRef(false);
-  const bg = BRAND_BG[brand]||BRAND_BG.default;
+  const [ok, setOk]   = useState(false);
+  const [err, setErr] = useState(false);
+  const bg       = BRAND_BG[brand] || BRAND_BG.default;
   const initials = brand.replace(/[^A-Za-z]/g,"").slice(0,2).toUpperCase();
-  const pageTitle = getPageTitle(name);
-
-  useEffect(() => {
-    if (fetched.current || !pageTitle) return;
-    const el = divRef.current; if (!el) return;
-    const obs = new IntersectionObserver(([e]) => {
-      if (!e.isIntersecting) return;
-      obs.disconnect();
-      if (fetched.current) return;
-      fetched.current = true;
-      fetchFandomImg(pageTitle).then(url => setImgUrl(url || "err"));
-    }, { rootMargin:"500px" });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [pageTitle]);
-
-  const hasImg = imgUrl && imgUrl !== "err";
+  const imgUrl   = getCarImageUrl(name);
 
   return (
-    <div ref={divRef} style={{
+    <div style={{
       width:"100%", height:130, position:"relative", overflow:"hidden",
-      background: hasImg ? "#eaf0ec" : `${bg}18`,
+      background: ok ? "#eaf0ec" : `${bg}18`,
       display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
     }}>
-      {!hasImg && (
+      {/* Brand initials — shown while loading or if no FH6 image exists */}
+      {(!ok || err) && (
         <div style={{
           width:52, height:52, borderRadius:"50%", background:bg,
           display:"flex", alignItems:"center", justifyContent:"center",
           fontFamily:"'Rajdhani',sans-serif", fontWeight:900, fontSize:18, color:"#fff",
-          opacity: imgUrl==="err"||!pageTitle ? 0.4 : 0.8,
+          opacity: err || !imgUrl ? 0.4 : 0.8,
         }}>{initials}</div>
       )}
-      {hasImg && (
-        <img src={imgUrl} alt="" style={{
-          position:"absolute", inset:0, width:"100%", height:"100%",
-          objectFit:"cover", objectPosition:"center 30%",
-          animation:"fhFadeIn 0.4s ease forwards",
-        }}/>
+
+      {/* FH6 render image — direct Special:FilePath URL, browser follows redirect */}
+      {imgUrl && !err && (
+        <img
+          src={imgUrl}
+          alt=""
+          onLoad={()=>setOk(true)}
+          onError={()=>setErr(true)}
+          style={{
+            position:"absolute", inset:0, width:"100%", height:"100%",
+            objectFit:"cover", objectPosition:"center 30%",
+            opacity: ok ? 1 : 0,
+            transition:"opacity 0.4s",
+          }}
+        />
       )}
+
       <div style={{
         position:"absolute", bottom:0, left:0, right:0, height:45,
         background:"linear-gradient(to top, rgba(248,252,250,0.95), transparent)",
