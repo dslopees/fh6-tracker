@@ -8,27 +8,34 @@ async function fetchFandomImg(pageTitle) {
   if (pageTitle in imgCache) return imgCache[pageTitle];
   imgCache[pageTitle] = null;
   try {
+    // Use Fandom's parse API to get the page HTML, then pull the pi-image-thumbnail
     const api = "https://forza.fandom.com/api.php";
-    // Step 1: list images on the page
-    const r1 = await fetch(`${api}?action=query&titles=${encodeURIComponent(pageTitle)}&prop=images&format=json&origin=*`);
-    const d1 = await r1.json();
-    const page = Object.values(d1?.query?.pages||{})[0];
-    const imgs = page?.images||[];
-    // Prefer FH6_ prefixed image, fallback to first
-    const pick = imgs.find(i=>i.title.toLowerCase().includes("fh6_"))||imgs[0];
-    if (!pick) return null;
-    // Step 2: resolve image to actual CDN URL
-    const r2 = await fetch(`${api}?action=query&titles=${encodeURIComponent(pick.title)}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json&origin=*`);
-    const d2 = await r2.json();
-    const ip = Object.values(d2?.query?.pages||{})[0];
-    const url = ip?.imageinfo?.[0]?.thumburl||ip?.imageinfo?.[0]?.url;
-    if (url) { imgCache[pageTitle]=url; return url; }
+    const r = await fetch(
+      `${api}?action=parse&page=${encodeURIComponent(pageTitle)}&prop=text&format=json&origin=*`
+    );
+    const d = await r.json();
+    const html = d?.parse?.text?.["*"];
+    if (!html) return null;
+
+    // Parse the HTML and find img.pi-image-thumbnail inside aside.portable-infobox
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const thumb = doc.querySelector("aside.portable-infobox img.pi-image-thumbnail")
+                || doc.querySelector("figure.pi-item img.pi-image-thumbnail")
+                || doc.querySelector("img.pi-image-thumbnail");
+    if (!thumb) return null;
+
+    // src is a relative Fandom CDN URL — make it absolute and request a reasonable size
+    let src = thumb.getAttribute("src") || thumb.getAttribute("data-src") || "";
+    if (!src) return null;
+    // Strip size param and request 600px wide version
+    src = src.replace(/\/revision\/latest.*$/, "/revision/latest/scale-to-width-down/600");
+    if (src.startsWith("//")) src = "https:" + src;
+    imgCache[pageTitle] = src;
+    return src;
   } catch(_) {}
   return null;
 }
-
-// Car name in our data → Fandom file name (without "FH6_" prefix and ".png")
-// Built from the Category:Thumbnails_(FH6) listing
 const WIKI_IMG = {
   // ABARTH
   "1968 595 Esseesse":                   "Abarth 595 esseesse",
